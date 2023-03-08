@@ -68,7 +68,7 @@ params = [N, K, scfB*B];
 figure
 loglog(tau, adev, tau, [lineN, lineK, lineB], '--', ...
     tauParams, params, 'o')
-title('Allan Deviation')
+title('Allan Deviation gyro x')
 xlabel('\tau')
 ylabel('\sigma(\tau)')
 legend('$\sigma (rad/s)$', '$\sigma_N ((rad/s)/\sqrt{Hz})$', ...
@@ -79,8 +79,8 @@ axis equal
 
 % VALUES 
 
-% K = 3.9257e-05
+% K = 9.0024e-04
 
-% N = 1.0469e-04
+% N = 1.0185e-04
 
-% B = 8.8152e-05
+% B = 2.1291e-04

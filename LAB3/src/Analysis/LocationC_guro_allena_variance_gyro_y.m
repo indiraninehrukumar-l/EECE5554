@@ -68,7 +68,7 @@ params = [N, K, scfB*B];
 figure
 loglog(tau, adev, tau, [lineN, lineK, lineB], '--', ...
     tauParams, params, 'o')
-title('Allan Deviation')
+title('Allan Deviation Y')
 xlabel('\tau')
 ylabel('\sigma(\tau)')
 legend('$\sigma (rad/s)$', '$\sigma_N ((rad/s)/\sqrt{Hz})$', ...
@@ -79,8 +79,8 @@ axis equal
 
 % VALUES 
 
-% K = 3.3711e-05
+% K = 7.9213e-06
 
-% N = 1.0469e-04
+% N = 1.9152e-04
 
-% B = 8.4190e-05
+% B = 4.2090e-05
