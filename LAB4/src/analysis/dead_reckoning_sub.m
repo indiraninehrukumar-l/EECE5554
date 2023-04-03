@@ -3,125 +3,123 @@ clc;
 close all;
 
 %open bag file
-bag = rosbag('/home/marley/catkin_ws/src/lab4_driver/bag_files/data_driving.bag');
+bag = rosbag('../data/boston_tour.bag');
 
-%rosbag info 'data_going_in_circles.bag';
+imu = select(bag,'Topic','/imu');
+msgStr1 = readMessages(imu,'DataFormat','struct');
+gps = select(bag,'Topic','/gps');
+msgStr2 = readMessages(gps,'DataFormat','struct');
 
-bsel1 = select(bag,'Topic','/imu');
-msgStructs1 = readMessages(bsel1,'DataFormat','struct');
-bsel2 = select(bag,'Topic','/gps');
-msgStructs2 = readMessages(bsel2,'DataFormat','struct');
+magX = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStr1);
+magY = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStr1);
+magZ = cellfun(@(m) double(m.MagField.MagneticField_.Z),msgStr1);
 
-mag_x = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStructs1);
-mag_y = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStructs1);
-mag_z = cellfun(@(m) double(m.MagField.MagneticField_.Z),msgStructs1);
+omegaX = cellfun(@(m) double(m.Imu.AngularVelocity.X),msgStr1);
+omegaY = cellfun(@(m) double(m.Imu.AngularVelocity.Y),msgStr1);
+omegaZ = cellfun(@(m) double(m.Imu.AngularVelocity.Z),msgStr1);
 
-omega_x = cellfun(@(m) double(m.IMU.AngularVelocity.X),msgStructs1);
-omega_y = cellfun(@(m) double(m.IMU.AngularVelocity.Y),msgStructs1);
-omega_z = cellfun(@(m) double(m.IMU.AngularVelocity.Z),msgStructs1);
+accX = cellfun(@(m) double(m.Imu.LinearAcceleration.X),msgStr1);
+accY = cellfun(@(m) double(m.Imu.LinearAcceleration.Y),msgStr1);
+accZ = cellfun(@(m) double(m.Imu.LinearAcceleration.Z),msgStr1);
 
-acc_x = cellfun(@(m) double(m.IMU.LinearAcceleration.X),msgStructs1);
-acc_y = cellfun(@(m) double(m.IMU.LinearAcceleration.Y),msgStructs1);
-acc_z = cellfun(@(m) double(m.IMU.LinearAcceleration.Z),msgStructs1);
+orientationX = cellfun(@(m) double(m.Imu.Orientation.X),msgStr1);
+orientationY = cellfun(@(m) double(m.Imu.Orientation.Y),msgStr1);
+orientationZ = cellfun(@(m) double(m.Imu.Orientation.Z),msgStr1);
+orientationW = cellfun(@(m) double(m.Imu.Orientation.W),msgStr1);
 
-orientation_x = cellfun(@(m) double(m.IMU.Orientation.X),msgStructs1);
-orientation_y = cellfun(@(m) double(m.IMU.Orientation.Y),msgStructs1);
-orientation_z = cellfun(@(m) double(m.IMU.Orientation.Z),msgStructs1);
-orientation_w = cellfun(@(m) double(m.IMU.Orientation.W),msgStructs1);
+utmEasting = cellfun(@(m) double(m.UTMEasting),msgStr2);
+utmNorthing = cellfun(@(m) double(m.UTMNorthing),msgStr2);
 
-UTM_easting = cellfun(@(m) double(m.UTMEasting),msgStructs2);
-UTM_northing = cellfun(@(m) double(m.UTMNorthing),msgStructs2);
+gpsSec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStr2);
+gpsNanoSec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStr2);
+gpsTimeTot = double(gpsSec + ( gpsNanoSec * 10^(-9)));
+gpsTime = gpsTimeTot - gpsTimeTot(1);
 
-gps_time_sec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStructs2);
-gps_time_nano_sec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStructs2);
-imu_time_points = double(gps_time_sec + ( gps_time_nano_sec * 10^(-9)));
-gps_time = imu_time_points - imu_time_points(1);
+imuSec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStr1);
+imuNanoSec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStr1);
+imuTimeTot = double(imuSec + ( imuNanoSec * 10^(-9)));
+imuTime = imuTimeTot - imuTimeTot(1);
 
-imu_time_sec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStructs1);
-imu_time_nano_sec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStructs1);
-imu_time_points = double(imu_time_sec + ( imu_time_nano_sec * 10^(-9)));
-imu_time = imu_time_points - imu_time_points(1);
+%quat to euler
+quat = [orientationW orientationX orientationY orientationZ];
+zyxEulRad = quat2eul(quat);
+yaw = zyxEulRad (:,1);
+pitch = zyxEulRad (:,2);
+roll = zyxEulRad (:,3);
 
+%calibration matrix - from magnetometer calibration.m
+scaleMat = [0.593711065086482,0;0,1];
+offsetX = -0.071906414507347;
+offsetY = 0.212860721801080;
+correctedX = magX - offsetX;
+correctedY = magY - offsetY;
+magCalibrated =  (scaleMat*[correctedX,correctedY]')';
 
-scale_matrix = [0.8760 0.0243; 0.0243 0.9952];
-offset_magx = -0.1604;
-offset_magy = 0.0197;
-corrected_magX = mag_x - offset_magx;
-corrected_magY = mag_y - offset_magy;
-mag_calib =  (scale_matrix*[corrected_magX,corrected_magY]')';
+% yaw from magnetometer
+magYawCalibrated = (atan2(-magCalibrated(:,2),magCalibrated(:,1)));
+magYawRaw = atan2(-magY,magX);
+magYawUnwrapped = unwrap(magYawCalibrated);
 
-calib_mag_yaw= (atan2(-mag_calib(:,2),mag_calib(:,1)));
-mag_yaw_raw = atan2(-mag_y,mag_x);
-unwrapped_mag_yaw = unwrap(calib_mag_yaw);
-gyro_yaw = cumtrapz(imu_time,omega_z)+ calib_mag_yaw(1);
-wrapped_gyro_yaw = wrapToPi(gyro_yaw);
+% yaw from gyroscope
+gyroYaw = cumtrapz(imuTime,omegaZ)+ magYawCalibrated(1);
+gyroYawWrapped = wrapToPi(gyroYaw);
 
 %Low pass filter on magnetometer
-mag_low_pass= lowpass(unwrapped_mag_yaw,0.001,40);
+magLowPass= lowpass(magYawUnwrapped, 0.001, 40);
 
 %high pass filter on gyro yaw
-gyro_high_pass = highpass(gyro_yaw,0.01,40);
+gyroHighPass = highpass(gyroYaw,0.01,40);
 
 %complemetary filter
 a_c = 0.992;
-filtered_yaw = a_c*mag_low_pass + (1-a_c)*gyro_high_pass;
-
-
-%quat to euler
-quat = [orientation_w orientation_x orientation_y orientation_z];
-eulZYX_rad = quat2eul(quat);
-yaw = eulZYX_rad (:,1);
-pitch = eulZYX_rad (:,2);
-roll = eulZYX_rad (:,3);
+filteredYaw = a_c*magLowPass + (1-a_c)*gyroHighPass;
 
 %integrate acceleration to velocity
+imuVel = cumtrapz(imuTime,accX);
+gpsVel = zeros(length(utmEasting),1);
+utmDistance = zeros(length(utmEasting),1);
+gpsTime_d =  zeros(length(utmEasting),1);
+for i = 2 : length(utmEasting)
 
-vel_imu = cumtrapz(imu_time,acc_x);
-vel_gps = zeros(length(UTM_easting),1);
-utm_distance = zeros(length(UTM_easting),1);
-gps_time_d =  zeros(length(UTM_easting),1);
-
-for i = 2 : length(UTM_easting)
-    vel_gps(1) =  sqrt((UTM_easting(2)-UTM_easting(1))^2+(UTM_northing(2)-UTM_northing(1))^2);   
-    utm_distance(i-1) = sqrt((UTM_easting(i)-UTM_easting(i-1))^2+(UTM_northing(i)-UTM_northing(i-1))^2);
-    gps_time_d(i-1) = abs(gps_time(i) - gps_time(i-1));
-    if gps_time_d(i-1) ==0
-        vel_gps(i) = vel_gps(i-1);
+    utmDistance(i-1) = sqrt((utmEasting(i)-utmEasting(i-1))^2+(utmNorthing(i)-utmNorthing(i-1))^2);
+    gpsVel(1) =  sqrt((utmEasting(2)-utmEasting(1))^2+(utmNorthing(2)-utmNorthing(1))^2);   
+    gpsTime_d(i-1) = abs(gpsTime(i) - gpsTime(i-1));
+    if gpsTime_d(i-1) ==0
+        gpsVel(i) = gpsVel(i-1);
     else
-        vel_gps(i) = (utm_distance(i-1)/gps_time_d(i-1));  
+        gpsVel(i) = (utmDistance(i-1)/gpsTime_d(i-1));  
     end
 end
-gps_time = sort(gps_time);
+gpsTime = sort(gpsTime);
 
 % moving average filter - accelerometer
 
 a = 0.992;
-accel_filt = zeros(length(acc_x),1);
-accel_filt(1) = acc_x(1);
-for i = 2 : length(acc_x)    
-    accel_filt(i) = (1-a)*acc_x(i) + a * accel_filt(i-1);
+accelFilt = zeros(length(accX),1);
+accelFilt(1) = accX(1);
+for i = 2 : length(accX)    
+    accelFilt(i) = (1-a)*accX(i) + a * accelFilt(i-1);
 end
 
-%dynamically change our acceleration values
-%measure start - end values for bias removal
 
-accel_chg = diff(accel_filt);
+%dynamically change our acceleration values based on gps velocity
+accelChng = diff(accelFilt);
 len = 0;
-start_end_time = [];
-for i = 2 : length(accel_chg)
-    if abs(accel_chg(i)) < 0.001
-        len = len +1;
+startEndTime = [];
+for i = 2 : length(accelChng)
+    if abs(accelChng(i)) < 0.001
+        len = len + 1;
     else
         if len > 1*40
-            start_c = int16(imu_time(i-1-len));
-            end_c = int16(imu_time(i-1));
+            startC = int16(imuTime(i-1-len));
+            endC = int16(imuTime(i-1));
 
-            a = find(gps_time>start_c,1,'first');
-            b = find(gps_time>end_c,1,'first')-1;
+            a = find(gpsTime>startC,1,'first');
+            b = find(gpsTime>endC,1,'first')-1;
 
-            if vel_gps(a:b,1) < 0.7
-                start_end_time = [start_end_time,i-1-len];
-                start_end_time = [start_end_time,i-1];
+            if gpsVel(a:b,1) < 0.7
+                startEndTime = [startEndTime,i-1-len];
+                startEndTime = [startEndTime,i-1];
             end
         end
         len = 0;
@@ -129,72 +127,58 @@ for i = 2 : length(accel_chg)
 end
 
 %dynamic bias removal
-start_end = length(start_end_time);
-for i = 2 : (start_end)
-    avg = mean(accel_filt(start_end_time(i-1):start_end_time(i)));
+startEnd = length(startEndTime);
+for i = 2 : (startEnd)
+    bias = mean(accelFilt(startEndTime(i-1):startEndTime(i)));
     if i==2
         start = 1;
     else
-        start = start_end_time(i-1);
+        start = startEndTime(i-1);
     end   
-    if i < start_end -1
-        end_ = start_end_time(i);
+    if i < startEnd -1
+        end_ = startEndTime(i);
     else
-        end_ = length(accel_filt);
+        end_ = length(accelFilt);
     end
     for j = start : end_
-        corr_acc(j) = accel_filt(j)- avg;
+        accelCorrect(j) = accelFilt(j)- bias;
     end
 end
 
-% velocity from corrected
-fwd_correct_vel = cumtrapz(imu_time,corr_acc);
-fwd_correct_vel(end) = 0;
-vel_gps(length(vel_gps)) =0;
+
+correctVel = cumtrapz(imuTime,accelCorrect);
+correctVel(end) = 0;
+gpsVel(length(gpsVel)) =0;
 
 % Dead_Reckoning
 
-
-
-figure;
-plot(imu_time,unwrap(yaw),"DisplayName","IMU-Yaw");
-hold on;
-plot(imu_time,(filtered_yaw),"DisplayName","filtered-yaw");
-hold on;
-xlabel('time (s)')
-ylabel('yaw (rad)')
-title('Yaw (IMU) vs Yaw (complementary filter)')
-legend;
-
-
 %integrate forward vel
-imu_disp = cumtrapz(imu_time,fwd_correct_vel);
-gps_disp = cumtrapz(gps_time,vel_gps);
+imuDisp = cumtrapz(imuTime,correctVel);
+gpsDisp = cumtrapz(gpsTime,gpsVel);
 
 figure;
-plot(imu_time,imu_disp,"red","DisplayName","displacement (Fwd vel)");
+plot(imuTime,imuDisp,"red","DisplayName","displacement (Fwd vel)");
 hold on;
-plot(gps_time,gps_disp,"blue","DisplayName","displacement (GPS)");
+plot(gpsTime,gpsDisp,"blue","DisplayName","displacement (GPS)");
 xlabel('time (s)')
 ylabel('displacement (m)')
-title('Displacement (Fwd vel) vs Displacement (GPS)')
+title('Displacement (IMU) vs Displacement (GPS)')
 legend;
 
-%  w*x dot vs acc_y
-accel_x_obs = corr_acc;
-vel_x_obs = fwd_correct_vel;
-for  i = 1 : length(omega_z)
-    accel_y_obs(i) = omega_z(i)* fwd_correct_vel(i) ;
+%  w*x dot vs accY
+accelXobs = accelCorrect;
+velXobs = correctVel;
+for  i = 1 : length(omegaZ)
+    accelYobs(i) = omegaZ(i)* correctVel(i) ;
 end
 
 figure;
-
-plot(imu_time,accel_y_obs,"Displayname","𝜔𝑋̇");
+plot(imuTime,accelYobs,"Displayname","𝜔𝑋̇");
 hold on;
-plot(imu_time,acc_y,"Displayname","𝑦̈𝑜𝑏𝑠");
+plot(imuTime,accY,"Displayname","𝑦̈𝑜𝑏𝑠");
 xlabel('time (s)')
 ylabel('acceleration (m/s^2)')
-title('𝜔𝑋̇ and 𝑦̈𝑜𝑏𝑠 plotted together')
+title('𝜔𝑋̇ vs 𝑦̈𝑜𝑏𝑠')
 legend;
 
 
@@ -202,49 +186,33 @@ legend;
 
 Vn =[];
 Ve= [];
-wrap_filter_yaw = wrapToPi(filtered_yaw);
+filterYawWrapped = wrapToPi(filteredYaw);
 
-for i = 1:length(wrap_filter_yaw)
-    yaw_angle = wrap_filter_yaw(i); 
-    Vn(i) = vel_x_obs(i) * cos(yaw_angle);
-    Ve(i) = vel_x_obs(i) * sin(yaw_angle);
+for i = 1:length(filterYawWrapped)
+    yawAngle = filterYawWrapped(i); 
+    Vn(i) = velXobs(i) * cos(yawAngle);
+    Ve(i) = velXobs(i) * sin(yawAngle);
 end
 
 % integrate [Ve, Vn] 
-x_e = (cumtrapz(imu_time, Ve))';
-x_n = (cumtrapz(imu_time, Vn))';
+Xe = (cumtrapz(imuTime, Ve))';
+Xn = (cumtrapz(imuTime, Vn))';
+
+% Correction for imu displacement so that it starts from same position as
+% GPS displacement
+Xe = Xe + 1220;
+Xn = Xn + 490;
 
 % correction for magnetometer
-utm_easting = UTM_easting - UTM_easting(1);
-utm_northing = UTM_northing - UTM_northing(1);
-
-% Heading correction for magnetometer using manual values of the staright line 
-% from gps trajectory plot
-GPS_slope = (utm_northing(25)-utm_northing(1))/(utm_easting(25) - utm_easting(1));
-imu_slope = (x_n(2200)-x_n(1))/(x_e(2200)-x_e(1));
-
-gps_th = atan(GPS_slope) + pi();
-imu_th = atan(imu_slope) + pi();
-
-heading = gps_th - imu_th;
-rot_mat_head = [cos(heading) -sin(heading); sin(heading) cos(heading)];
-
-rotated_traj = (rot_mat_head * [x_e, x_n]')';
+utmEastingCrt = utmEasting - utmEasting(1);
+utmNorthingCrt = utmNorthing - utmNorthing(1);
 
 figure;
-subplot(2,1,1)
-plot(x_e, x_n,"red", utm_easting, utm_northing,"blue");
-title("Plot of estimated trajectory with the GPS vs IMU (before adjustment)");
+plot(Xe, Xn,"red", utmEastingCrt, utmNorthingCrt,"blue");
+title("Estimated trajectory with the GPS vs IMU");
 xlabel("X (m)");
 ylabel("Y (m)");
-legend("imu-traj","gps-traj");
-axis('equal')
-subplot(2,1,2)
-plot(rotated_traj(:,1), rotated_traj(:,2),"red", utm_easting, utm_northing,"blue");
-title("Plot of estimated trajectory with the GPS vs IMU (after adjustment)");
-xlabel("X (m)");
-ylabel("Y (m)");
-legend("imu-traj","gps-traj");
+legend("imu-trajectory","gps-trajectory");
 axis('equal')
 
 

@@ -2,43 +2,42 @@ clc;
 close all;
 
 %open bag file
-bag = rosbag('/home/marley/catkin_ws/src/lab4_driver/bag_files/data_going_in_circles.bag');
-
-%rosbag info 'data_going_in_circles.bag';
-
-bsel = select(bag,'Topic','/imu');
-msgStructs = readMessages(bsel,'DataFormat','struct');
-Mag_x = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStructs);
-Mag_y = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStructs);
-mag = [Mag_x,Mag_y];
+bag = rosbag('../data/circles.bag');
 
 
-% fit ellipse
-[a,b,orientation_rad,x0,y0] = fit_ellipse(Mag_x,Mag_y);
+imu = select(bag,'Topic','/imu');
+msgStr = readMessages(imu,'DataFormat','struct');
+magX = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStr);
+magY = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStr);
+mag = [magX,magY];
+
+
+% Ellipse fit
+[a,b,orientationRad,x0,y0] = fitEllipse(magX,magY);
 
 %Hard iron distortion
-offset_x = x0;
-offset_y = y0;
-mag_hard_corrected_x = Mag_x - offset_x;
-mag_hard_corrected_y = Mag_y - offset_y;
+offsetX = x0;
+offsetY = y0;
+hardCorrectedX = magX - offsetX;
+hardCorrectedY = magY - offsetY;
 
 %soft iron distortion
-theta = orientation_rad;
+theta = orientationRad;
 R = [cos(theta) sin(theta);-sin(theta) cos(theta)];
-rotated_mag = (R*[mag_hard_corrected_x,mag_hard_corrected_y]')';
+magTransformed = (R*[hardCorrectedX,hardCorrectedY]')';
 
-scale_factor = b/a;
-scale_matrix= [scale_factor 0;0 1];
-scaled_mag = (scale_matrix*rotated_mag')';
+scaleFactor = b/a;
+scaleMat= [scaleFactor 0;0 1];
+magScaled = (scaleMat*magTransformed')';
 
 theta = -theta;
-R_back = [cos(theta) sin(theta);-sin(theta) cos(theta)];
-corrected_mag= (R_back*scaled_mag')';
+R1 = [cos(theta) sin(theta);-sin(theta) cos(theta)];
+magCorrected= (R1*magScaled')';
 
 figure;
-scatter(corrected_mag(:,1),corrected_mag(:,2), 10 ,"filled","DisplayName","After calibration");
+scatter(magCorrected(:,1),magCorrected(:,2), 10 ,"filled","DisplayName","After calibration");
 hold on;
-scatter(Mag_x, Mag_y, 10, "filled", "DisplayName", "Before calibration");
+scatter(magX, magY, 10, "filled", "DisplayName", "Before calibration");
 hold on;
 xlabel("Magnetic Field X (Gauss)");
 ylabel("Magnetic Field Y (Gauss)");
@@ -48,19 +47,19 @@ title('Plot - Magnetometer X-Y plot before and after hard and soft iron calibrat
 legend;
 
 
-SoftIronRotationBack = R_back*scale_matrix*R;
+SoftIronRotationBack = R1*scaleMat*R;
 
 
-imu_timePoints_sec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStructs);
-imu_timePoints_nanosec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStructs);
-imu_timePoints = double(imu_timePoints_sec + ( imu_timePoints_nanosec * 10^(-9)));
-imu_time = imu_timePoints - imu_timePoints(1);
+imuSec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStr);
+imuNanoSec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStr);
+imuTimeTot = double(imuSec + ( imuNanoSec * 10^(-9)));
+imuTime = imuTimeTot - imuTimeTot(1);
 
 
 figure;
-scatter(imu_time, Mag_x, 10 ,"filled","DisplayName","Before Calibration");
+scatter(imuTime, magX, 10 ,"filled","DisplayName","Before Calibration");
 hold on;
-scatter(imu_time, corrected_mag(:,1), 10, "filled", "DisplayName", "After calibration");
+scatter(imuTime, magCorrected(:,1), 10, "filled", "DisplayName", "After calibration");
 hold on;
 xlabel("Time (s)");
 ylabel("Magnetic Field X (Gauss)");
@@ -68,9 +67,9 @@ title('Plot - time series Magnetic Field X  before and after the correction');
 legend;
 
 figure;
-scatter(imu_time, Mag_y, 10 ,"filled","DisplayName","Before Calibration");
+scatter(imuTime, magY, 10 ,"filled","DisplayName","Before Calibration");
 hold on;
-scatter(imu_time, corrected_mag(:,2), 10, "filled", "DisplayName", "After calibration");
+scatter(imuTime, magCorrected(:,2), 10, "filled", "DisplayName", "After calibration");
 hold on;
 xlabel("Time (s)");
 ylabel("Magnetic Field Y (Gauss)");
@@ -79,22 +78,20 @@ legend;
 
 %--------------------------------------------------------------------------------------------
 
-function [a,b,orientation_rad,X0,Y0] = fit_ellipse(x,y,axis_handle)
+function [a,b,orientationRad,X0,Y0] = fitEllipse(x,y,axis_handle)
 % initialize
-orientation_tolerance = 1e-3;
+orientationTol = 1e-3;
 
 % empty warning stack
 warning( '' );
 
-% prepare vectors, must be column vectors
 x = x(:);
 y = y(:);
 
-% remove bias of the ellipse - to make matrix inversion more accurate. (will be added later on).
-mean_x = mean(x);
-mean_y = mean(y);
-x = x-mean_x;
-y = y-mean_y;
+meanX = mean(x);
+meanY = mean(y);
+x = x-meanX;
+y = y-meanY;
 
 % the estimation for the conic equation of the ellipse
 X = [x.^2, x.*y, y.^2, x, y ];
@@ -111,24 +108,24 @@ end
 [a,b,c,d,e] = deal( a(1),a(2),a(3),a(4),a(5) );
 
 % remove the orientation from the ellipse
-if ( min(abs(b/a),abs(b/c)) > orientation_tolerance )
+if ( min(abs(b/a),abs(b/c)) > orientationTol )
     
-    orientation_rad = 1/2 * atan( b/(c-a) );
-    cos_phi = cos( orientation_rad );
-    sin_phi = sin( orientation_rad );
+    orientationRad = 1/2 * atan( b/(c-a) );
+    cosPhi = cos( orientationRad );
+    sinPhi = sin( orientationRad );
     [a,b,c,d,e] = deal(...
-        a*cos_phi^2 - b*cos_phi*sin_phi + c*sin_phi^2,...
+        a*cosPhi^2 - b*cosPhi*sinPhi + c*sinPhi^2,...
         0,...
-        a*sin_phi^2 + b*cos_phi*sin_phi + c*cos_phi^2,...
-        d*cos_phi - e*sin_phi,...
-        d*sin_phi + e*cos_phi );
-    [mean_x,mean_y] = deal( ...
-        cos_phi*mean_x - sin_phi*mean_y,...
-        sin_phi*mean_x + cos_phi*mean_y );
+        a*sinPhi^2 + b*cosPhi*sinPhi + c*cosPhi^2,...
+        d*cosPhi - e*sinPhi,...
+        d*sinPhi + e*cosPhi );
+    [meanX,meanY] = deal( ...
+        cosPhi*meanX - sinPhi*meanY,...
+        sinPhi*meanX + cosPhi*meanY );
 else
-    orientation_rad = 0;
-    cos_phi = cos( orientation_rad );
-    sin_phi = sin( orientation_rad );
+    orientationRad = 0;
+    cosPhi = cos( orientationRad );
+    sinPhi = sin( orientationRad );
 end
 
 % check if conic equation represents an ellipse
@@ -146,15 +143,15 @@ if (test>0)
     if (a<0), [a,c,d,e] = deal( -a,-c,-d,-e ); end
     
     % final ellipse parameters
-    X0          = mean_x - d/2/a;
-    Y0          = mean_y - e/2/c;
+    X0          = meanX - d/2/a;
+    Y0          = meanY - e/2/c;
     F           = 1 + (d^2)/(4*a) + (e^2)/(4*c);
     [a,b]       = deal( sqrt( F/a ),sqrt( F/c ) );    
-    long_axis   = 2*max(a,b);
-    short_axis  = 2*min(a,b);
+    longAxis   = 2*max(a,b);
+    shortAxis  = 2*min(a,b);
 
     % rotate the axes backwards to find the center point of the original TILTED ellipse
-    R           = [ cos_phi sin_phi; -sin_phi cos_phi ];
+    R           = [ cosPhi sinPhi; -sinPhi cosPhi ];
     P_in        = R * [X0;Y0];
     X0_in       = P_in(1);
     Y0_in       = P_in(2);
@@ -163,13 +160,13 @@ if (test>0)
     ellipse_t = struct( ...
         'a',a,...
         'b',b,...
-        'phi',orientation_rad,...
+        'phi',orientationRad,...
         'X0',X0,...
         'Y0',Y0,...
         'X0_in',X0_in,...
         'Y0_in',Y0_in,...
-        'long_axis',long_axis,...
-        'short_axis',short_axis,...
+        'long_axis',longAxis,...
+        'short_axis',shortAxis,...
         'status','' );
 else
     % report an empty structure
@@ -190,7 +187,7 @@ end
 if (nargin>2) & ~isempty( axis_handle ) & (test>0)
     
     % rotation matrix to rotate the axes with respect to an angle phi
-    R = [ cos_phi sin_phi; -sin_phi cos_phi ];
+    R = [ cosPhi sinPhi; -sinPhi cosPhi ];
     
     % the axes
     ver_line        = [ [X0 X0]; Y0+b*[-1 1] ];

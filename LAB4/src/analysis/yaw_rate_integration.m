@@ -2,92 +2,91 @@ clc;
 close all;
 
 %open bag file
-bag = rosbag('/home/marley/catkin_ws/src/lab4_driver/bag_files/data_driving.bag');
+bag = rosbag('../data/boston_tour.bag');
 
-%rosbag info 'data_going_in_circles.bag';
 
-% imu_data
-bsel = select(bag,'Topic','/imu');
-msgStructs = readMessages(bsel,'DataFormat','struct');
+% imu data
+imu = select(bag,'Topic','/imu');
+msgStr = readMessages(imu,'DataFormat','struct');
 
-mag_x = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStructs);
-mag_y = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStructs);
-mag_z = cellfun(@(m) double(m.MagField.MagneticField_.Z),msgStructs);
+magX = cellfun(@(m) double(m.MagField.MagneticField_.X),msgStr);
+magY = cellfun(@(m) double(m.MagField.MagneticField_.Y),msgStr);
+magZ = cellfun(@(m) double(m.MagField.MagneticField_.Z),msgStr);
 
-omega_x = cellfun(@(m) double(m.IMU.AngularVelocity.X),msgStructs);
-omega_y = cellfun(@(m) double(m.IMU.AngularVelocity.Y),msgStructs);
-omega_z = cellfun(@(m) double(m.IMU.AngularVelocity.Z),msgStructs);
+omegaX = cellfun(@(m) double(m.Imu.AngularVelocity.X),msgStr);
+omegaY = cellfun(@(m) double(m.Imu.AngularVelocity.Y),msgStr);
+omegaZ = cellfun(@(m) double(m.Imu.AngularVelocity.Z),msgStr);
 
-orientation_x = cellfun(@(m) double(m.IMU.Orientation.X),msgStructs);
-orientation_y = cellfun(@(m) double(m.IMU.Orientation.Y),msgStructs);
-orientation_z = cellfun(@(m) double(m.IMU.Orientation.Z),msgStructs);
-orientation_w = cellfun(@(m) double(m.IMU.Orientation.W),msgStructs);
+orientationX = cellfun(@(m) double(m.Imu.Orientation.X),msgStr);
+orientationY = cellfun(@(m) double(m.Imu.Orientation.Y),msgStr);
+orientationZ = cellfun(@(m) double(m.Imu.Orientation.Z),msgStr);
+orientationW = cellfun(@(m) double(m.Imu.Orientation.W),msgStr);
 
-acc_x = cellfun(@(m) double(m.IMU.LinearAcceleration.X),msgStructs);
-acc_y = cellfun(@(m) double(m.IMU.LinearAcceleration.Y),msgStructs);
-acc_z = cellfun(@(m) double(m.IMU.LinearAcceleration.Z),msgStructs);
+accX = cellfun(@(m) double(m.Imu.LinearAcceleration.X),msgStr);
+accY = cellfun(@(m) double(m.Imu.LinearAcceleration.Y),msgStr);
+accZ = cellfun(@(m) double(m.Imu.LinearAcceleration.Z),msgStr);
 
-imu_time_sec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStructs);
-imu_time_nano_sec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStructs);
-imu_time_points = double(imu_time_sec + ( imu_time_nano_sec * 10^(-9)));
-imu_time = imu_time_points - imu_time_points(1);
+imuSec = cellfun(@(m) double(m.Header.Stamp.Sec),msgStr);
+imuNanoSec = cellfun(@(m) double(m.Header.Stamp.Nsec),msgStr);
+imuTimeTot = double(imuSec + ( imuNanoSec * 10^(-9)));
+imuTime = imuTimeTot - imuTimeTot(1);
 
 %quat to euler
-quat = [orientation_w orientation_x orientation_y orientation_z];
-eulZYX_rad = quat2eul(quat);
-yaw = eulZYX_rad (:,1);
-pitch = eulZYX_rad (:,2);
-roll = eulZYX_rad (:,3);
+quat = [orientationW orientationX orientationY orientationZ];
+zyxEulRad = quat2eul(quat);
+yaw = zyxEulRad (:,1);
+pitch = zyxEulRad (:,2);
+roll = zyxEulRad (:,3);
 
 %calibration matrix - from magnetometer calibration.m
-scale_matrix = [0.8760 0.0243; 0.0243 0.9952];
-offset_magx = -0.1604;
-offset_magy = 0.0197;
-corrected_magX = mag_x - offset_magx;
-corrected_magY = mag_y - offset_magy;
-calibrated_mag =  (scale_matrix*[corrected_magX,corrected_magY]')';
+scaleMat = [0.593711065086482,0;0,1];
+offsetX = -0.071906414507347;
+offsetY = 0.212860721801080;
+correctedX = magX - offsetX;
+correctedY = magY - offsetY;
+magCalibrated =  (scaleMat*[correctedX,correctedY]')';
 
-% yaw_from_magnetometer
-calib_mag_yaw= (atan2(-calibrated_mag(:,2),calibrated_mag(:,1)));
-mag_yaw_raw = atan2(-mag_y,mag_x);
-unwrapped_mag_yaw = unwrap(calib_mag_yaw);
+% yaw from magnetometer
+magYawCalibrated = (atan2(-magCalibrated(:,2),magCalibrated(:,1)));
+magYawRaw = atan2(-magY,magX);
+magYawUnwrapped = unwrap(magYawCalibrated);
 figure;
-plot(imu_time, calib_mag_yaw, "DisplayName"," Corrected yaw",'LineWidth',2.0);
+plot(imuTime, magYawCalibrated, "DisplayName"," Corrected yaw",'LineWidth',2.0);
 hold on;
-plot(imu_time,mag_yaw_raw,"DisplayName"," Raw magnetometer yaw",'LineWidth',2.0);
+plot(imuTime,magYawRaw,"DisplayName"," Raw magnetometer yaw",'LineWidth',2.0);
 xlabel('time (s)')
 ylabel('yaw (rad)')
-title('Comparision of Yaw Angles from Magnetometer')
+title('Comparision of Yaw Angles - Magnetometer')
 legend;
 
-% yaw_from_gyroscope
-gyro_yaw = cumtrapz(imu_time,omega_z)+ calib_mag_yaw(1);
-wrapped_gyro_yaw = wrapToPi(gyro_yaw);
+% yaw from gyroscope
+gyroYaw = cumtrapz(imuTime,omegaZ)+ magYawCalibrated(1);
+gyroYawWrapped = wrapToPi(gyroYaw);
 figure;
-plot(imu_time,calib_mag_yaw,"DisplayName"," Corrected Magnetometer Yaw",'LineWidth',2.0);
+plot(imuTime,magYawCalibrated,"DisplayName"," Corrected Magnetometer Yaw",'LineWidth',2.0);
 hold on;
-plot(imu_time,wrapped_gyro_yaw,"DisplayName","Yaw from Gyro ",'LineWidth',2.0);
+plot(imuTime,gyroYawWrapped,"DisplayName","Yaw from Gyro ",'LineWidth',2.0);
 xlabel('time (s)')
 ylabel('yaw (rad)')
-title('Magnetometer vs. Yaw Integrated from Gyro')
+title('Magnetometer vs Yaw from Gyro')
 legend;
  
 %Low pass filter on magnetometer
-mag_low_pass= lowpass(unwrapped_mag_yaw, 0.001, 40);
+magLowPass= lowpass(magYawUnwrapped, 0.001, 40);
 
 %high pass filter on gyro yaw
-gyro_high_pass = highpass(gyro_yaw,0.01,40);
+gyroHighPass = highpass(gyroYaw,0.01,40);
 
 %complemetary filter
 a_c = 0.4;
-filtered_yaw = a_c*mag_low_pass + (1-a_c)*gyro_high_pass;
+filteredYaw = a_c*magLowPass + (1-a_c)*gyroHighPass;
 
 figure;
-plot(imu_time,(mag_low_pass),"DisplayName","Yaw (Mag) - low pass filter",'LineWidth',2.0);
+plot(imuTime,(magLowPass),"DisplayName","Yaw (Mag) - low pass filter",'LineWidth',2.0);
 hold on;
-plot(imu_time,(gyro_high_pass),"DisplayName","Yaw (Gyro) - high pass filter",'LineWidth',2.0);
+plot(imuTime,(gyroHighPass),"DisplayName","Yaw (Gyro) - high pass filter",'LineWidth',2.0);
 hold on;
-plot(imu_time, (filtered_yaw), "DisplayName","Yaw - Complementary filter",'LineWidth',2.0);
+plot(imuTime, (filteredYaw), "DisplayName","Yaw - Complementary filter",'LineWidth',2.0);
 hold on;
 xlabel('time (s)')
 ylabel('yaw (rad)')
@@ -97,11 +96,11 @@ legend;
 
 %complementary filter vs imu yaw
 figure;
-plot(imu_time,unwrap(yaw),"DisplayName","Yaw from IMU",'LineWidth',2.0);
+plot(imuTime,unwrap(yaw),"DisplayName","Yaw from IMU",'LineWidth',2.0);
 hold on;
-plot(imu_time, (filtered_yaw), "DisplayName","Yaw - Complementary filter",'LineWidth',2.0);
+plot(imuTime, (filteredYaw), "DisplayName","Yaw - Complementary filter",'LineWidth',2.0);
 hold on;
 xlabel('time (s)')
 ylabel('yaw (rad)')
-title('Yaw from the Complementary filter & Yaw angle computed by the IMU together')
+title('Yaw from Complementary filter vs Yaw from IMU')
 legend;
