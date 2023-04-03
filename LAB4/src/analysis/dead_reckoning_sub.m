@@ -181,6 +181,17 @@ ylabel('acceleration (m/s^2)')
 title('𝜔𝑋̇ vs 𝑦̈𝑜𝑏𝑠')
 legend;
 
+figure;
+plot(imuTime,accelYobs,"Displayname","𝜔𝑋̇");
+xlabel('time (s)')
+ylabel('acceleration (m/s^2)')
+title('Time vs 𝜔X')
+
+figure;
+plot(imuTime,accY,"Displayname","𝑦̈𝑜𝑏𝑠");
+xlabel('time (s)')
+ylabel('acceleration (m/s^2)')
+title('Time vs 𝑦̈𝑜𝑏𝑠')
 
 % Denote this vector by (ve,vn) 
 

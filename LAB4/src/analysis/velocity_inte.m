@@ -160,6 +160,15 @@ ylabel('vel (m/s)')
 title('Adjusted velocity from IMU vs GPS velocity')
 legend
 
+figure;
+plot(imuTime, imuVel, "DisplayName","Forward velocity from accelerometer",'LineWidth',2.0);
+hold on;
+plot(imuTime,correctVel,"DisplayName","Vel (accel) - after adj", 'LineWidth',2.0);
+xlabel('time (s)')
+ylabel('vel (m/s)')
+title(' Forward velocity from accel (before and after adjustment)')
+legend
+
 
 
 
